@@ -748,13 +748,7 @@
         var hearts = getHeartsVal(i); total += hearts; totalHearts += hearts;
         scores.push(total);
       }
-      if (totalHearts !== 13) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ١٣ (الحالي: '+totalHearts+')'; return; }
-      var qc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibQ'+i).dataset.state)>0) qc++; }
-      if (qc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده بنت السبيت'; return; }
-      var dc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }
-      if (dc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده ١٠ ديمن'; return; }
-
-      // Check كبوت: manual button or auto-detect (all 13 hearts + ♠Q + ♦10)
+      // Check كبوت: button or auto-detect
       var moonPlayer = -1;
       for (var i = 0; i < 4; i++) {
         if (isKaboutBtn(i)) { moonPlayer = i; break; }
@@ -766,9 +760,17 @@
           if (hasQ && hasD && getHeartsVal(i) === 13) { moonPlayer = i; break; }
         }
       }
+
       if (moonPlayer >= 0) {
+        // كبوت: skip validation, player gets 0, others get +26
         for (var i = 0; i < 4; i++) scores[i] = (i === moonPlayer) ? 0 : 26;
       } else {
+        // Normal round: validate inputs
+        if (totalHearts !== 13) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ١٣ (الحالي: '+totalHearts+')'; return; }
+        var qc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibQ'+i).dataset.state)>0) qc++; }
+        if (qc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده بنت السبيت'; return; }
+        var dc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }
+        if (dc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده ١٠ ديمن'; return; }
         // Apply إعلان إفلاس rules
         for (var i = 0; i < 4; i++) {
           if (isMaseera(i)) {

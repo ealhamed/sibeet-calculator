@@ -176,6 +176,8 @@
     .sib-toggle.doubled .mult-badge { display: block; background: var(--gold); color: var(--navy); }
     .sib-toggle.maseera.active { background: var(--gold); border-color: var(--gold); box-shadow: 0 3px 10px rgba(201,162,39,0.3); }
     .sib-toggle.maseera.active .card-val { color: var(--navy); opacity: 1; }
+    .sib-toggle.kabout-btn.active { background: var(--navy); border-color: var(--navy); color: var(--cream); }
+    .sib-toggle.kabout-btn.active .card-val { color: var(--cream); opacity: 1; }
     .sib-toggle:active { transform: scale(0.93); }
     .sibeet-hearts-row {
       grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto 1fr;
@@ -556,9 +558,9 @@
             '<button class="sib-toggle spade" id="sibQ' + i + '" onclick="toggleSibCard(' + i + ',\'queen\')" aria-label="بنت السبيت ' + name + '" aria-pressed="false" data-state="0"><span class="mult-badge" id="sibQB' + i + '">×1</span><span class="card-suit">♠</span><span class="card-val">Q</span></button>' +
             '<button class="sib-toggle diamond" id="sibD' + i + '" onclick="toggleSibCard(' + i + ',\'diamond\')" aria-label="١٠ ديمن ' + name + '" aria-pressed="false" data-state="0"><span class="mult-badge" id="sibDB' + i + '">×1</span><span class="card-suit">♦</span><span class="card-val">10</span></button>' +
             '<div style="grid-column:1/-1;display:flex;gap:4px">' +
-              '<button class="sib-toggle maseera" id="sibM' + i + '" onclick="toggleMaseera(' + i + ')" aria-label="إعلان إفلاس ' + name + '" aria-pressed="false" style="flex:1;height:32px;font-size:11px;gap:4px"><span class="card-val" style="opacity:1;font-size:11px">إعلان إفلاس</span></button>' +
-              '<button class="sib-toggle" id="sibMF' + i + '" onclick="toggleMaseeraFail(' + i + ')" style="flex:0 0 auto;height:32px;font-size:11px;padding:0 12px;display:none;background:var(--burgundy);border-color:var(--burgundy);color:var(--cream)"><span class="card-val" style="opacity:1;font-size:11px;color:var(--cream)">فشل</span></button>' +
-            '</div>' +
+              '<button class="sib-toggle kabout-btn" id="sibK' + i + '" onclick="toggleKaboutBtn(' + i + ')" aria-label="كبوت ' + name + '" aria-pressed="false" style="flex:1;height:32px;font-size:11px"><span class="card-val" style="opacity:1;font-size:11px">كبوت</span></button>' +
+              '<button class="sib-toggle maseera" id="sibM' + i + '" onclick="toggleMaseera(' + i + ')" aria-label="إعلان إفلاس ' + name + '" aria-pressed="false" style="flex:2;height:32px;font-size:11px;gap:4px"><span class="card-val" style="opacity:1;font-size:11px">إعلان إفلاس</span></button>' +
+              '<button class="sib-toggle" id="sibMF' + i + '" onclick="toggleMaseeraFail(' + i + ')" style="flex:1;height:32px;font-size:11px;padding:0 8px;display:none;background:var(--burgundy);border-color:var(--burgundy);color:var(--cream)"><span class="card-val" style="opacity:1;font-size:11px;color:var(--cream)">فشل</span></button>' +
             '<div class="sibeet-hearts-row">' +
               '<button class="sibeet-hearts-btn" onclick="stepHearts(' + i + ',1)" aria-label="زيادة هاص ' + name + '">+</button>' +
               '<div class="sibeet-hearts-circle" id="sibH' + i + '">' + SVG_HEART + '<span>0</span></div>' +
@@ -654,12 +656,36 @@
       return state === 2 ? base * 2 : base;
     }
 
+    function toggleKaboutBtn(player) {
+      var el = document.getElementById('sibK' + player);
+      var isActive = el.classList.contains('active');
+      // Deactivate all others first (only one player can kabout)
+      if (!isActive) {
+        for (var j = 0; j < 4; j++) {
+          document.getElementById('sibK' + j).classList.remove('active');
+          document.getElementById('sibK' + j).setAttribute('aria-pressed', 'false');
+        }
+      }
+      el.classList.toggle('active', !isActive);
+      el.setAttribute('aria-pressed', !isActive);
+      if (navigator.vibrate) navigator.vibrate(10);
+      updateSibeetTotals();
+    }
+
+    function isKaboutBtn(i) {
+      var el = document.getElementById('sibK' + i);
+      return el && el.classList.contains('active');
+    }
+
     function toggleMaseera(player) {
       var el = document.getElementById('sibM' + player);
       var failBtn = document.getElementById('sibMF' + player);
+      var kaboutBtn = document.getElementById('sibK' + player);
       var isActive = el.classList.contains('active');
       el.classList.toggle('active', !isActive);
       el.setAttribute('aria-pressed', !isActive);
+      // When إفلاس active: hide كبوت, show فشل. When off: show كبوت, hide فشل.
+      kaboutBtn.style.display = !isActive ? 'none' : '';
       failBtn.style.display = !isActive ? '' : 'none';
       if (isActive) failBtn.classList.remove('active');
       if (navigator.vibrate) navigator.vibrate(10);
@@ -727,12 +753,17 @@
       var dc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }
       if (dc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده ١٠ ديمن'; return; }
 
-      // Check كبوت: one player has all 13 hearts + ♠Q + ♦10
+      // Check كبوت: manual button or auto-detect (all 13 hearts + ♠Q + ♦10)
       var moonPlayer = -1;
       for (var i = 0; i < 4; i++) {
-        var hasQ = parseInt(document.getElementById('sibQ' + i).dataset.state) > 0;
-        var hasD = parseInt(document.getElementById('sibD' + i).dataset.state) > 0;
-        if (hasQ && hasD && getHeartsVal(i) === 13) { moonPlayer = i; break; }
+        if (isKaboutBtn(i)) { moonPlayer = i; break; }
+      }
+      if (moonPlayer < 0) {
+        for (var i = 0; i < 4; i++) {
+          var hasQ = parseInt(document.getElementById('sibQ' + i).dataset.state) > 0;
+          var hasD = parseInt(document.getElementById('sibD' + i).dataset.state) > 0;
+          if (hasQ && hasD && getHeartsVal(i) === 13) { moonPlayer = i; break; }
+        }
       }
       if (moonPlayer >= 0) {
         for (var i = 0; i < 4; i++) scores[i] = (i === moonPlayer) ? 0 : 26;

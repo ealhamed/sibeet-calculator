@@ -273,6 +273,19 @@
     .app-dialog-actions .dlg-cancel { background: transparent; color: var(--navy); border: 1px solid rgba(26,39,68,0.2); }
     .app-dialog-actions .dlg-confirm { background: var(--burgundy); color: var(--cream); }
 
+    .sibeet-player.disabled-player .sibeet-player-controls,
+    .sibeet-player.disabled-player .sibeet-player-round-total,
+    .sibeet-player.disabled-player .sibeet-player-bar { display: none; }
+    .sibeet-player.disabled-player .sibeet-player-total { font-size: 20px; }
+    .p4-toggle-row {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 4px; cursor: pointer;
+    }
+    .p4-checkbox {
+      width: 18px; height: 18px; accent-color: var(--burgundy); cursor: pointer;
+    }
+    .p4-toggle-label { font-size: 11px; font-weight: 600; color: var(--navy); opacity: 0.6; cursor: pointer; }
+
     .bottom-pad { height: env(safe-area-inset-bottom, 16px); }
 
     @media (prefers-reduced-motion: reduce) {
@@ -319,7 +332,7 @@
 
     <!-- Round History -->
     <div class="sibeet-rounds-table" id="sibeetRoundsSection" style="display:none">
-      <div class="sibeet-round-row header">
+      <div class="sibeet-round-row header" id="sibeetRoundHeader">
         <span>#</span>
         <span id="sColH1">١</span>
         <span id="sColH2">٢</span>
@@ -508,7 +521,7 @@
     const SibeetState = {
       STORAGE_KEY: 'sibeet_state',
       _defaultState() {
-        return { players: ['لاعب ١', 'لاعب ٢', 'لاعب ٣', 'لاعب ٤'], rounds: [], totals: [0,0,0,0], target: 150 };
+        return { players: ['لاعب ١', 'لاعب ٢', 'لاعب ٣', 'لاعب ٤'], rounds: [], totals: [0,0,0,0], target: 150, playerCount: 4 };
       },
       load() {
         try {
@@ -516,7 +529,7 @@
           if (raw) {
             const p = JSON.parse(raw);
             const d = this._defaultState();
-            return { players: p.players||d.players, rounds: p.rounds||d.rounds, totals: p.totals||d.totals, target: p.target||150 };
+            return { players: p.players||d.players, rounds: p.rounds||d.rounds, totals: p.totals||d.totals, target: p.target||150, playerCount: p.playerCount||4 };
           }
         } catch(e) {}
         return this._defaultState();
@@ -526,7 +539,8 @@
         s.rounds.push({ scores: [...scores] });
         for (let i=0;i<4;i++) s.totals[i] += scores[i];
         this.save(s);
-        return { gameOver: s.totals.some(t => t >= (s.target||150)) };
+        var pc = s.playerCount || 4;
+        return { gameOver: s.totals.slice(0, pc).some(t => t >= (s.target||150)) };
       },
       undoLastRound(s) {
         if (!s.rounds.length) return;
@@ -543,14 +557,19 @@
     function renderSibeet() {
       var s = sibeetState;
       var tgt = s.target || 200;
-      var minScore = Math.min.apply(null, s.totals);
+      var minScore = Math.min.apply(null, s.totals.slice(0, s.playerCount || 4));
 
+      var pc = s.playerCount || 4;
       var scores = document.getElementById('sibeetScores');
       scores.innerHTML = s.players.map(function(name, i) {
+        var isP4Disabled = (i === 3 && pc === 3);
         var pct = Math.min((s.totals[i] / tgt) * 100, 100);
         var danger = s.totals[i] >= (tgt * 0.8) ? ' danger' : '';
         var leader = (s.totals[i] === minScore && s.rounds.length > 0) ? ' leader' : '';
-        return '<div class="sibeet-player' + danger + leader + '">' +
+        var disabledCls = isP4Disabled ? ' disabled-player' : '';
+        var p4Label = isP4Disabled ? 'اللي يلعبون اربعة؟' : 'اللي يلعبون ثلاثة؟';
+        var p4Checkbox = (i === 3) ? '<label class="p4-toggle-row"><input type="checkbox" class="p4-checkbox" onchange="togglePlayer4()"><span class="p4-toggle-label">' + p4Label + '</span></label>' : '';
+        return '<div class="sibeet-player' + danger + leader + disabledCls + '">' +
           '<div class="sibeet-player-name" onclick="renameSibeetPlayer(' + i + ')">' + name + ' <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg></div>' +
           '<div class="sibeet-player-total">' + s.totals[i] + '</div>' +
           '<div class="sibeet-player-bar"><div class="sibeet-player-bar-fill" style="width:' + pct + '%"></div></div>' +
@@ -569,6 +588,7 @@
             '</div>' +
           '</div>' +
           '<div class="sibeet-player-round-total" id="sibPTotal' + i + '">+0</div>' +
+          p4Checkbox +
         '</div>';
       }).join('');
 
@@ -580,20 +600,24 @@
       document.getElementById('sibeetActions').style.display = hasRounds ? 'flex' : 'none';
 
       if (hasRounds) {
-        s.players.forEach(function(name, i) {
-          var h = document.getElementById('sColH' + (i+1));
-          if (h) h.textContent = name.substring(0, 4);
-        });
+        // Update round header columns
+        var headerEl = document.getElementById('sibeetRoundHeader');
+        var gridCols = '28px' + ' 1fr'.repeat(pc);
+        headerEl.style.gridTemplateColumns = gridCols;
+        var headerHTML = '<span>#</span>';
+        for (var hi = 0; hi < pc; hi++) { headerHTML += '<span>' + s.players[hi].substring(0, 4) + '</span>'; }
+        headerEl.innerHTML = headerHTML;
         document.getElementById('sibeetRoundsList').innerHTML = s.rounds.map(function(r, idx) {
-          var mx = Math.max.apply(null, r.scores);
-          return '<div class="sibeet-round-row"><span class="sibeet-round-num">' + (idx+1) + '</span>' +
-            r.scores.map(function(sc) { var cls = ''; if (sc===mx&&mx>0) cls=' class="sibeet-round-high"'; else if (sc<0) cls=' style="color:var(--gold);font-weight:700"'; return '<span'+cls+'>'+sc+'</span>'; }).join('') +
+          var activeScores = r.scores.slice(0, pc);
+          var mx = Math.max.apply(null, activeScores);
+          return '<div class="sibeet-round-row" style="grid-template-columns:' + gridCols + '"><span class="sibeet-round-num">' + (idx+1) + '</span>' +
+            activeScores.map(function(sc) { var cls = ''; if (sc===mx&&mx>0) cls=' class="sibeet-round-high"'; else if (sc<0) cls=' style="color:var(--gold);font-weight:700"'; return '<span'+cls+'>'+sc+'</span>'; }).join('') +
           '</div>';
         }).join('');
       }
 
       document.getElementById('sibeetValidation').textContent = '';
-      var gameOver = s.totals.some(function(t) { return t >= (s.target||150); });
+      var gameOver = s.totals.slice(0, pc).some(function(t) { return t >= (s.target||150); });
       var viewOnly = hostConn && !editUnlocked;
       var hideEntry = gameOver || viewOnly;
       var entryEl = document.querySelector('.sibeet-entry');
@@ -611,7 +635,8 @@
       var badgePrefix = type === 'queen' ? 'sibQB' : 'sibDB';
 
       if (nextState === 1) {
-        for (var j = 0; j < 4; j++) {
+        var pc = sibeetState.playerCount || 4;
+        for (var j = 0; j < pc; j++) {
           var btn = document.getElementById(prefix + j);
           btn.classList.remove('active', 'doubled'); btn.dataset.state = '0';
           btn.setAttribute('aria-pressed', 'false');
@@ -633,7 +658,8 @@
     }
 
     function getTotalHearts() {
-      var t = 0; for (var i=0;i<4;i++) t += parseInt(document.getElementById('sibH'+i).textContent)||0; return t;
+      var pc = sibeetState.playerCount || 4;
+      var t = 0; for (var i=0;i<pc;i++) t += parseInt(document.getElementById('sibH'+i).textContent)||0; return t;
     }
     function getHeartsVal(i) { return parseInt(document.getElementById('sibH'+i).textContent)||0; }
     const SVG_HEART = '<svg class="heart-bg" viewBox="0 0 52 52"><path d="M26 47 C26 47 4 32 4 17 4 9 10 4 17 4 21 4 24 6 26 9 28 6 31 4 35 4 42 4 48 9 48 17 48 32 26 47 26 47Z" fill="#C41E3A"/></svg>';
@@ -643,8 +669,8 @@
       var cur = getHeartsVal(player);
       var nv = cur + delta;
       if (nv < 0) return;
-      if (delta > 0 && getTotalHearts() >= 13) return;
-      if (nv > 13) return;
+      if (delta > 0 && getTotalHearts() >= 12) return;
+      if (nv > 12) return;
       if (nv !== cur && navigator.vibrate) navigator.vibrate(8);
       setHeartsVal(player, nv);
       updateSibeetTotals();
@@ -662,7 +688,8 @@
       var isActive = el.classList.contains('active');
       // Deactivate all others first (only one player can kabout)
       if (!isActive) {
-        for (var j = 0; j < 4; j++) {
+        var pc = sibeetState.playerCount || 4;
+        for (var j = 0; j < pc; j++) {
           document.getElementById('sibK' + j).classList.remove('active');
           document.getElementById('sibK' + j).setAttribute('aria-pressed', 'false');
         }
@@ -711,7 +738,8 @@
     }
 
     function updateSibeetTotals() {
-      for (var i=0;i<4;i++) {
+      var pc = sibeetState.playerCount || 4;
+      for (var i=0;i<pc;i++) {
         var raw = getCardVal('sibQ',i) + getCardVal('sibD',i) + getHeartsVal(i);
         var el = document.getElementById('sibPTotal'+i);
         if (isMaseera(i)) {
@@ -739,40 +767,55 @@
       renderSibeet();
     }
 
+    function setPlayerCount(count) {
+      sibeetState.playerCount = count;
+      SibeetState.save(sibeetState);
+      renderSibeet();
+    }
+
+    function togglePlayer4() {
+      var current = sibeetState.playerCount || 4;
+      setPlayerCount(current === 4 ? 3 : 4);
+    }
+
     var sibeetSubmitLocked = false;
     function submitSibeet() {
       if (sibeetSubmitLocked) return;
+      var pc = sibeetState.playerCount || 4;
       var scores = [], totalHearts = 0;
-      for (var i=0;i<4;i++) {
+      for (var i=0;i<pc;i++) {
         var total = getCardVal('sibQ',i) + getCardVal('sibD',i);
         var hearts = getHeartsVal(i); total += hearts; totalHearts += hearts;
         scores.push(total);
       }
+      // Pad to 4 for storage consistency
+      while (scores.length < 4) scores.push(0);
       // Check كبوت: button or auto-detect
       var moonPlayer = -1;
-      for (var i = 0; i < 4; i++) {
+      for (var i = 0; i < pc; i++) {
         if (isKaboutBtn(i)) { moonPlayer = i; break; }
       }
       if (moonPlayer < 0) {
-        for (var i = 0; i < 4; i++) {
+        for (var i = 0; i < pc; i++) {
           var hasQ = parseInt(document.getElementById('sibQ' + i).dataset.state) > 0;
           var hasD = parseInt(document.getElementById('sibD' + i).dataset.state) > 0;
-          if (hasQ && hasD && getHeartsVal(i) === 13) { moonPlayer = i; break; }
+          if (hasQ && hasD && getHeartsVal(i) === 12) { moonPlayer = i; break; }
         }
       }
 
       if (moonPlayer >= 0) {
         // كبوت: skip validation, player gets 0, others get +26
-        for (var i = 0; i < 4; i++) scores[i] = (i === moonPlayer) ? 0 : 26;
+        for (var i = 0; i < pc; i++) scores[i] = (i === moonPlayer) ? 0 : 26;
+        for (var i = pc; i < 4; i++) scores[i] = 0;
       } else {
         // Normal round: validate inputs
-        if (totalHearts !== 13) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ١٣ (الحالي: '+totalHearts+')'; return; }
-        var qc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibQ'+i).dataset.state)>0) qc++; }
+        if (totalHearts !== 12) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ١٢ (الحالي: '+totalHearts+')'; return; }
+        var qc = 0; for (var i=0;i<pc;i++) { if (parseInt(document.getElementById('sibQ'+i).dataset.state)>0) qc++; }
         if (qc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده بنت السبيت'; return; }
-        var dc = 0; for (var i=0;i<4;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }
+        var dc = 0; for (var i=0;i<pc;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }
         if (dc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده ١٠ ديمن'; return; }
         // Apply إعلان إفلاس rules
-        for (var i = 0; i < 4; i++) {
+        for (var i = 0; i < pc; i++) {
           if (isMaseera(i)) {
             var failed = isMaseeraFailed(i) || scores[i] > 0;
             scores[i] = failed ? 30 + scores[i] : -30;
@@ -790,7 +833,8 @@
 
     function showSibeetGameOver() {
       var s = sibeetState;
-      var ranked = s.players.map(function(n,i) { return {name:n, score:s.totals[i]}; }).sort(function(a,b) { return a.score-b.score; });
+      var pc = s.playerCount || 4;
+      var ranked = s.players.slice(0, pc).map(function(n,i) { return {name:n, score:s.totals[i]}; }).sort(function(a,b) { return a.score-b.score; });
       var svgMedal = function(color, num) { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="14" r="8" fill="' + color + '" opacity="0.9"/><text x="12" y="18" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Cairo">' + num + '</text><path d="M8 2L12 8L16 2" stroke="' + color + '" stroke-width="2" fill="none" opacity="0.5"/></svg>'; };
       var medals = [svgMedal('#C9A227','١'), svgMedal('#A0A0A0','٢'), svgMedal('#CD7F32','٣'), ''];
       var barColors = ['var(--gold)','rgba(192,192,192,0.7)','rgba(205,127,50,0.7)','rgba(245,240,230,0.2)'];
@@ -801,7 +845,8 @@
         '<div style="font-size:20px;font-weight:700;margin-bottom:4px">' + ranked[0].name + ' الأقل نقاط!</div>' +
         '<div style="width:100%;max-width:300px;margin-top:12px">' +
           ranked.map(function(p,i) {
-            var pct = ranked[3]&&ranked[3].score>0 ? Math.max(20,(p.score/ranked[3].score)*100) : 50;
+            var last = ranked[pc-1];
+            var pct = last&&last.score>0 ? Math.max(20,(p.score/last.score)*100) : 50;
             return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span style="font-size:14px;font-weight:600">'+(medals[i]||'')+' '+p.name+'</span><span style="font-size:16px;font-weight:700">'+p.score+'</span></div><div style="height:6px;background:rgba(245,240,230,0.1);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+barColors[i]+';border-radius:3px;transition:width 0.6s ease"></div></div></div>';
           }).join('') +
         '</div>' +
@@ -984,13 +1029,14 @@
       renderSibeet();
     }
 
-    function getStatePayload() { return { players: sibeetState.players, rounds: sibeetState.rounds, totals: sibeetState.totals, target: sibeetState.target }; }
+    function getStatePayload() { return { players: sibeetState.players, rounds: sibeetState.rounds, totals: sibeetState.totals, target: sibeetState.target, playerCount: sibeetState.playerCount }; }
 
     function applyStatePayload(payload) {
       sibeetState.players = payload.players;
       sibeetState.rounds = payload.rounds;
       sibeetState.totals = payload.totals;
       sibeetState.target = payload.target;
+      sibeetState.playerCount = payload.playerCount || 4;
       SibeetState.save(sibeetState);
     }
 
@@ -1040,6 +1086,29 @@
         document.getElementById('roomModal').style.display = 'none';
       }
     });
+
+    // ── Screen Auto-Dim ────────────────────────────────────
+    (function() {
+      const DIM_DELAY = 15000;
+      let dimTimer = null;
+
+      const dimOverlay = document.createElement('div');
+      dimOverlay.id = 'dimOverlay';
+      dimOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:250;pointer-events:none;opacity:0;transition:opacity 0.8s ease';
+      document.body.appendChild(dimOverlay);
+
+      function dim() { dimOverlay.style.opacity = '1'; }
+      function undim() { dimOverlay.style.opacity = '0'; resetDimTimer(); }
+      function resetDimTimer() {
+        clearTimeout(dimTimer);
+        dimTimer = setTimeout(dim, DIM_DELAY);
+      }
+
+      ['pointerdown', 'pointermove', 'keydown', 'scroll', 'touchstart'].forEach(evt => {
+        document.addEventListener(evt, undim, { passive: true });
+      });
+      resetDimTimer();
+    })();
 
     // Init
     renderSibeet();

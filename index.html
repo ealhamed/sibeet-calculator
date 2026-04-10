@@ -416,7 +416,7 @@
           </div>
           <div style="margin-bottom:16px">
             <label style="display:block;color:var(--gold-text);font-size:16px;font-weight:700;margin-bottom:6px">رمز الغرفة</label>
-            <input type="text" id="joinCodeInput" maxlength="4" style="width:100%;padding:10px 12px;border:1px solid rgba(26,39,68,0.2);border-radius:14px;font-family:'Cairo',sans-serif;font-size:18px;font-weight:700;text-align:center;background:white;color:var(--navy);outline:none;text-transform:uppercase;letter-spacing:8px" placeholder="----" inputmode="text">
+            <input type="text" id="joinCodeInput" maxlength="6" style="width:100%;padding:10px 12px;border:1px solid rgba(26,39,68,0.2);border-radius:14px;font-family:'Cairo',sans-serif;font-size:18px;font-weight:700;text-align:center;background:white;color:var(--navy);outline:none;text-transform:uppercase;letter-spacing:8px" placeholder="----" inputmode="text">
           </div>
           <button class="btn-primary" style="width:100%;max-width:none" onclick="doJoinRoom()">انضم</button>
           <div style="color:var(--burgundy);text-align:center;margin-top:8px;font-size:13px" id="joinError"></div>
@@ -427,6 +427,22 @@
 
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getDatabase, ref, set, onValue, remove, onDisconnect, push, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+    const firebaseConfig = {
+      apiKey: "AIzaSyBi_Xt8aGEljiA5w5F1IdIGs8a_hYWNT9Y",
+      authDomain: "sibeet-calculator-al-dew.firebaseapp.com",
+      databaseURL: "https://sibeet-calculator-al-dew-default-rtdb.firebaseio.com",
+      projectId: "sibeet-calculator-al-dew",
+      storageBucket: "sibeet-calculator-al-dew.firebasestorage.app",
+      messagingSenderId: "212424287297",
+      appId: "1:212424287297:web:932ce72ea5e4abf13352c0"
+    };
+    const fbApp = initializeApp(firebaseConfig);
+    const fbDb = getDatabase(fbApp);
+    window.FB = { db: fbDb, ref, set, onValue, remove, onDisconnect, push, serverTimestamp };
+  </script>
   <script>
     // ── In-App Dialog ────────────────────────────────────────
     function appConfirm(message) {
@@ -870,9 +886,12 @@
       SibeetState.newGame(sibeetState); renderSibeet();
     }
 
-    // ── P2P Room Manager ──────────────────────────────────────
+    // ── Room Manager (P2P + Firebase fallback) ──
     const PEER_PREFIX = 'sib1-';
+    const FB_NS = 'sibeet';
     let peer = null, connections = [], hostConn = null, isHost = false, editUnlocked = false, roomCode = '';
+    let roomMode = 'p2p';
+    let fbUnsubState = null, fbUnsubMsgs = null, fbMyId = null, p2pFallbackAttempted = false;
 
     function genRoomCode() { return Math.random().toString(36).substring(2, 6).toUpperCase(); }
 
@@ -912,7 +931,18 @@
           conn.send({ type: 'edit_lock', payload: { unlocked: editUnlocked } });
         });
       });
-      peer.on('error', err => { console.error('Peer error:', err); document.getElementById('connectedCount').textContent = 'لم يتم الاتصال، تأكد من الإنترنت'; });
+      peer.on('error', err => {
+        console.error('Peer error:', err);
+        if (!p2pFallbackAttempted && (String(err).indexOf('server') !== -1 || err.type === 'network' || err.type === 'socket-error' || err.type === 'unavailable-id')) {
+          p2pFallbackAttempted = true;
+          document.getElementById('connectedCount').textContent = 'يتم التحويل إلى الغرفة الكبيرة...';
+          if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+          connections = []; isHost = false;
+          setTimeout(() => { roomMode = 'firebase'; createRoomFirebase(); }, 500);
+          return;
+        }
+        document.getElementById('connectedCount').textContent = 'لم يتم الاتصال، تأكد من الإنترنت';
+      });
     }
 
     function joinRoom() {
@@ -927,7 +957,9 @@
 
     function doJoinRoom() {
       const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
-      if (!code || code.length !== 4) { document.getElementById('joinError').textContent = 'أدخل رمز من ٤ أحرف'; return; }
+      if (!code) { document.getElementById('joinError').textContent = 'أدخل رمز الغرفة'; return; }
+      if (code.charAt(0) === 'F' && code.charAt(1) === '-') { return doJoinRoomFirebase(code.substring(2)); }
+      if (code.length !== 4) { document.getElementById('joinError').textContent = 'أدخل رمز من ٤ أحرف'; return; }
       document.getElementById('joinError').textContent = '';
       document.getElementById('joinSpinner').style.display = '';
       isHost = false; roomCode = code;
@@ -993,6 +1025,9 @@
     function toggleEditLock() {
       editUnlocked = document.getElementById('editLockToggle').checked;
       connections.forEach(c => { if (c.open) c.send({ type: 'edit_lock', payload: { unlocked: editUnlocked } }); });
+      if (roomMode === 'firebase' && window.FB && roomCode && isHost) {
+        window.FB.set(window.FB.ref(window.FB.db, 'rooms/' + roomCode + '/editUnlocked'), editUnlocked).catch(() => {});
+      }
     }
 
     function updateConnCount() {
@@ -1024,9 +1059,103 @@
 
     function leaveRoom() {
       if (peer) { peer.destroy(); peer = null; }
-      connections = []; hostConn = null; isHost = false; roomCode = ''; editUnlocked = false;
+      if (fbUnsubState) { fbUnsubState(); fbUnsubState = null; }
+      if (fbUnsubMsgs) { fbUnsubMsgs(); fbUnsubMsgs = null; }
+      if (window.FB && roomCode && roomMode === 'firebase' && isHost) {
+        window.FB.remove(window.FB.ref(window.FB.db, 'rooms/' + roomCode)).catch(() => {});
+      }
+      connections = []; hostConn = null; isHost = false; roomCode = ''; editUnlocked = false; fbMyId = null; p2pFallbackAttempted = false; roomMode = 'p2p';
       document.getElementById('roomStatus').style.display = 'none';
       renderSibeet();
+    }
+
+    // ── Firebase room implementation ──
+    function createRoomFirebase() {
+      if (!window.FB) { document.getElementById('connectedCount').textContent = 'Firebase غير متوفر'; return; }
+      roomCode = genRoomCode();
+      isHost = true; roomMode = 'firebase';
+      document.getElementById('roomModalTitle').textContent = 'غرفة جديدة';
+      document.getElementById('roomCreateView').style.display = '';
+      document.getElementById('roomJoinView').style.display = 'none';
+      document.getElementById('roomCodeDisplay').textContent = 'F-' + roomCode;
+      const joinUrl = window.location.href.split('?')[0] + '?room=F-' + roomCode;
+      const qrBox = document.getElementById('qrBox'); qrBox.innerHTML = '';
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
+      if (document.getElementById('roomModal').style.display !== 'flex') { pushOverlay('roomModal'); document.getElementById('roomModal').style.display = 'flex'; }
+      document.getElementById('editLockToggle').checked = false;
+      editUnlocked = false;
+
+      const FB = window.FB;
+      const roomRef = FB.ref(FB.db, 'rooms/' + roomCode);
+      FB.set(roomRef, {
+        host: true, createdAt: FB.serverTimestamp(),
+        state: getStatePayload(), editUnlocked: false, presence: {}
+      }).then(() => {
+        FB.onDisconnect(roomRef).remove();
+        fbUnsubState = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/presence'), snap => {
+          const presence = snap.val() || {};
+          const count = Object.keys(presence).length;
+          const arabic = count.toLocaleString('ar-SA');
+          document.getElementById('connectedCount').textContent = arabic + ' متصلين';
+          showRoomStatus('غرفة F-' + roomCode + ' • معزّب • ' + arabic + ' متصلين');
+        });
+        fbUnsubMsgs = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'), snap => {
+          const msgs = snap.val() || {};
+          Object.keys(msgs).forEach(k => {
+            const msg = msgs[k];
+            if (!editUnlocked) return;
+            if (msg.type === 'round_added') {
+              SibeetState.addRound(sibeetState, msg.scores);
+              renderSibeet(); broadcastState();
+            } else if (msg.type === 'name_changed') {
+              sibeetState.players[msg.idx] = msg.name;
+              SibeetState.save(sibeetState); renderSibeet(); broadcastState();
+            }
+            FB.remove(FB.ref(FB.db, 'rooms/' + roomCode + '/messages/' + k));
+          });
+        });
+        showRoomStatus('غرفة F-' + roomCode + ' • معزّب • ٠ متصلين');
+      }).catch(err => {
+        console.error(err);
+        document.getElementById('connectedCount').textContent = 'فشل الاتصال بـ Firebase';
+      });
+    }
+
+    function doJoinRoomFirebase(code) {
+      if (!window.FB) { document.getElementById('joinError').textContent = 'Firebase غير متوفر'; return; }
+      document.getElementById('joinError').textContent = '';
+      document.getElementById('joinSpinner').style.display = '';
+      isHost = false; roomCode = code; roomMode = 'firebase';
+      const FB = window.FB;
+      const roomRef = FB.ref(FB.db, 'rooms/' + code);
+      FB.onValue(roomRef, snap => {
+        const data = snap.val();
+        if (!data) {
+          document.getElementById('joinSpinner').style.display = 'none';
+          document.getElementById('joinError').textContent = 'الغرفة غير موجودة';
+          return;
+        }
+        if (!fbMyId) {
+          fbMyId = Math.random().toString(36).substring(2, 10);
+          const presRef = FB.ref(FB.db, 'rooms/' + code + '/presence/' + fbMyId);
+          FB.set(presRef, { joinedAt: FB.serverTimestamp() });
+          FB.onDisconnect(presRef).remove();
+          document.getElementById('joinSpinner').style.display = 'none';
+          closeRoomModal();
+          showRoomStatus('غرفة F-' + code + ' • متصل');
+        }
+        if (data.state) { applyStatePayload(data.state); renderSibeet(); }
+        editUnlocked = !!data.editUnlocked;
+        const entry = document.querySelector('.sibeet-entry');
+        if (entry) entry.style.display = editUnlocked ? '' : 'none';
+        document.querySelectorAll('.sibeet-player-controls, .sibeet-player-round-total').forEach(el => { el.style.display = editUnlocked ? '' : 'none'; });
+      }, err => {
+        console.error(err);
+        document.getElementById('joinSpinner').style.display = 'none';
+        document.getElementById('joinError').textContent = 'فشل الاتصال بـ Firebase';
+      });
+      fbUnsubState = () => {};
     }
 
     function getStatePayload() { return { players: sibeetState.players, rounds: sibeetState.rounds, totals: sibeetState.totals, target: sibeetState.target, playerCount: sibeetState.playerCount }; }
@@ -1041,6 +1170,20 @@
     }
 
     function broadcastState() {
+      if (roomMode === 'firebase' && window.FB && roomCode) {
+        const FB = window.FB;
+        if (isHost) {
+          FB.set(FB.ref(FB.db, 'rooms/' + roomCode + '/state'), getStatePayload()).catch(() => {});
+        } else {
+          const rounds = sibeetState.rounds;
+          const lastRound = rounds[rounds.length - 1];
+          if (lastRound) {
+            const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
+            FB.set(msgRef, { type: 'round_added', scores: lastRound.scores }).catch(() => {});
+          }
+        }
+        return;
+      }
       if (!isHost) {
         if (hostConn && hostConn.open) {
           const rounds = sibeetState.rounds;
@@ -1063,8 +1206,14 @@
     const _origRename = renameSibeetPlayer;
     renameSibeetPlayer = async function(idx) {
       await _origRename(idx);
-      if (!isHost && hostConn && hostConn.open) {
-        hostConn.send({ type: 'name_changed', payload: { idx, name: sibeetState.players[idx] } });
+      if (!isHost) {
+        if (roomMode === 'firebase' && window.FB && roomCode) {
+          const FB = window.FB;
+          const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
+          FB.set(msgRef, { type: 'name_changed', idx, name: sibeetState.players[idx] }).catch(() => {});
+        } else if (hostConn && hostConn.open) {
+          hostConn.send({ type: 'name_changed', payload: { idx, name: sibeetState.players[idx] } });
+        }
       }
       broadcastState();
     };
@@ -1073,9 +1222,13 @@
     (function() {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
-      if (roomParam && roomParam.length === 4) {
-        window.history.replaceState({}, '', window.location.pathname);
-        setTimeout(() => { document.getElementById('joinCodeInput').value = roomParam.toUpperCase(); doJoinRoom(); }, 500);
+      if (roomParam) {
+        const isFB = roomParam.charAt(0) === 'F' && roomParam.charAt(1) === '-';
+        const validLen = isFB ? (roomParam.length === 6) : (roomParam.length === 4);
+        if (validLen) {
+          window.history.replaceState({}, '', window.location.pathname);
+          setTimeout(() => { document.getElementById('joinCodeInput').value = roomParam.toUpperCase(); doJoinRoom(); }, 500);
+        }
       }
     })();
 

@@ -908,6 +908,7 @@
       pushOverlay('roomModal');
       document.getElementById('roomModal').style.display = 'flex';
       editUnlocked = false; isHost = true; connections = [];
+      showRoomStatus('غرفة ' + roomCode + ' • جاري الاتصال...');
 
       peer = new Peer(PEER_PREFIX + roomCode.toLowerCase(), { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
       peer.on('open', () => { document.getElementById('connectedCount').textContent = 'جاهز • ٠ متصلين'; showRoomStatus('غرفة ' + roomCode + ' • معزّب • ٠ متصلين'); });
@@ -1092,6 +1093,7 @@
       new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
       if (document.getElementById('roomModal').style.display !== 'flex') { pushOverlay('roomModal'); document.getElementById('roomModal').style.display = 'flex'; }
       editUnlocked = false;
+      showRoomStatus('غرفة F-' + roomCode + ' • جاري الاتصال...');
 
       const FB = window.FB;
       const roomRef = FB.ref(FB.db, 'rooms/' + roomCode);

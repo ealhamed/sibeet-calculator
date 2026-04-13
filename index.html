@@ -278,13 +278,19 @@
     .sibeet-player.disabled-player .sibeet-player-bar { display: none; }
     .sibeet-player.disabled-player .sibeet-player-total { font-size: 20px; }
     .p4-toggle-row {
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      margin-top: 4px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin-top: 4px;
     }
-    .p4-checkbox {
-      width: 18px; height: 18px; accent-color: var(--burgundy); cursor: pointer;
+    .p4-toggle-label { font-size: 11px; font-weight: 600; color: var(--navy); opacity: 0.6; }
+    .p4-yes-btn {
+      background: var(--burgundy); color: var(--cream);
+      border: none; border-radius: 999px; padding: 4px 14px;
+      font-family: 'Cairo', sans-serif; font-size: 12px; font-weight: 800;
+      cursor: pointer; min-height: 28px;
+      box-shadow: 0 2px 5px rgba(114,47,55,0.25); transition: transform 0.12s;
     }
-    .p4-toggle-label { font-size: 11px; font-weight: 600; color: var(--navy); opacity: 0.6; cursor: pointer; }
+    .p4-yes-btn:active { transform: scale(0.94); }
+    [data-theme="dark"] .p4-toggle-label { color: var(--cream); }
 
     .bottom-pad { height: env(safe-area-inset-bottom, 16px); }
 
@@ -603,7 +609,7 @@
         var leader = (s.totals[i] === minScore && s.rounds.length > 0) ? ' leader' : '';
         var disabledCls = isP4Disabled ? ' disabled-player' : '';
         var p4Label = isP4Disabled ? 'اللي يلعبون اربعة؟' : 'اللي يلعبون ثلاثة؟';
-        var p4Checkbox = (i === 3) ? '<label class="p4-toggle-row"><input type="checkbox" class="p4-checkbox" onchange="togglePlayer4()"><span class="p4-toggle-label">' + p4Label + '</span></label>' : '';
+        var p4Checkbox = (i === 3) ? '<div class="p4-toggle-row"><span class="p4-toggle-label">' + p4Label + '</span><button class="p4-yes-btn" onclick="togglePlayer4()">ايه</button></div>' : '';
         return '<div class="sibeet-player' + danger + leader + disabledCls + '">' +
           '<div class="sibeet-player-name" onclick="renameSibeetPlayer(' + i + ')">' + name + ' <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg></div>' +
           '<div class="sibeet-player-total">' + s.totals[i] + '</div>' +

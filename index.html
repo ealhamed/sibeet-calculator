@@ -234,6 +234,7 @@
       font-size: 13px; font-weight: 600; text-align: center; color: var(--navy);
     }
     .sibeet-round-row.header { font-weight: 700; color: var(--gold-text); font-size: 11px; border-bottom: 1px solid rgba(26,39,68,0.1); }
+    .sibeet-round-row.header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
     .sibeet-round-num { opacity: 0.3; font-weight: 700; }
     .sibeet-round-high { color: var(--burgundy); font-weight: 700; }
 
@@ -646,7 +647,7 @@
         var gridCols = '28px' + ' 1fr'.repeat(pc);
         headerEl.style.gridTemplateColumns = gridCols;
         var headerHTML = '<span>#</span>';
-        for (var hi = 0; hi < pc; hi++) { headerHTML += '<span>' + s.players[hi].substring(0, 4) + '</span>'; }
+        for (var hi = 0; hi < pc; hi++) { headerHTML += '<span>' + s.players[hi] + '</span>'; }
         headerEl.innerHTML = headerHTML;
         document.getElementById('sibeetRoundsList').innerHTML = s.rounds.map(function(r, idx) {
           var activeScores = r.scores.slice(0, pc);
@@ -706,12 +707,16 @@
     const SVG_HEART = '<svg class="heart-bg" viewBox="0 0 52 52"><path d="M26 47 C26 47 4 32 4 17 4 9 10 4 17 4 21 4 24 6 26 9 28 6 31 4 35 4 42 4 48 9 48 17 48 32 26 47 26 47Z" fill="#C41E3A"/></svg>';
     function setHeartsVal(i, val) { document.getElementById('sibH'+i).innerHTML = SVG_HEART+'<span>'+val+'</span>'; }
 
+    function getHeartsCap() {
+      return (sibeetState.playerCount || 4) === 3 ? 12 : 13;
+    }
     function stepHearts(player, delta) {
       var cur = getHeartsVal(player);
       var nv = cur + delta;
       if (nv < 0) return;
-      if (delta > 0 && getTotalHearts() >= 12) return;
-      if (nv > 12) return;
+      var cap = getHeartsCap();
+      if (delta > 0 && getTotalHearts() >= cap) return;
+      if (nv > cap) return;
       if (nv !== cur && navigator.vibrate) navigator.vibrate(8);
       setHeartsVal(player, nv);
       updateSibeetTotals();
@@ -840,7 +845,7 @@
         for (var i = 0; i < pc; i++) {
           var hasQ = parseInt(document.getElementById('sibQ' + i).dataset.state) > 0;
           var hasD = parseInt(document.getElementById('sibD' + i).dataset.state) > 0;
-          if (hasQ && hasD && getHeartsVal(i) === 12) { moonPlayer = i; break; }
+          if (hasQ && hasD && getHeartsVal(i) === getHeartsCap()) { moonPlayer = i; break; }
         }
       }
 
@@ -850,7 +855,8 @@
         for (var i = pc; i < 4; i++) scores[i] = 0;
       } else {
         // Normal round: validate inputs
-        if (totalHearts !== 12) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ١٢ (الحالي: '+totalHearts+')'; return; }
+        var heartsCap = getHeartsCap();
+        if (totalHearts !== heartsCap) { document.getElementById('sibeetValidation').textContent = 'مجموع الهاص لازم يكون ' + heartsCap + ' (الحالي: ' + totalHearts + ')'; return; }
         var qc = 0; for (var i=0;i<pc;i++) { if (parseInt(document.getElementById('sibQ'+i).dataset.state)>0) qc++; }
         if (qc !== 1) { document.getElementById('sibeetValidation').textContent = 'حدد من عنده بنت السبيت'; return; }
         var dc = 0; for (var i=0;i<pc;i++) { if (parseInt(document.getElementById('sibD'+i).dataset.state)>0) dc++; }

@@ -435,7 +435,6 @@
     </div>
   </main>
 
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -660,16 +659,34 @@
 
       document.getElementById('sibeetValidation').textContent = '';
       var gameOver = s.totals.slice(0, pc).some(function(t) { return t >= (s.target||150); });
-      var viewOnly = roomCode && !isHost && !editUnlocked;
-      var hideEntry = gameOver || viewOnly;
+      var blockForViewer = !!(roomCode && !isHost && !editUnlocked);
+      var hideEntry = gameOver || blockForViewer;
       var entryEl = document.querySelector('.sibeet-entry');
       if (entryEl) entryEl.style.display = hideEntry ? 'none' : '';
       document.querySelectorAll('.sibeet-player-controls, .sibeet-player-round-total').forEach(function(el) {
         el.style.display = hideEntry ? 'none' : '';
       });
+      // Hide all write-action controls for locked viewers. Idempotent:
+      // on unlock, the next render() re-shows them (restoring the
+      // existing hasRounds/p4-toggle display rules).
+      var hasRounds = s.rounds.length > 0;
+      var actionsEl = document.getElementById('sibeetActions');
+      if (actionsEl) {
+        actionsEl.style.display = blockForViewer ? 'none' : (hasRounds ? 'flex' : 'none');
+      }
+      // Hide player-rename pencils and p4-toggle row for locked viewers.
+      document.querySelectorAll('.sibeet-player-name').forEach(function(el) {
+        el.style.pointerEvents = blockForViewer ? 'none' : '';
+        var svg = el.querySelector('svg');
+        if (svg) svg.style.display = blockForViewer ? 'none' : '';
+      });
+      document.querySelectorAll('.p4-toggle-row').forEach(function(el) {
+        el.style.display = blockForViewer ? 'none' : '';
+      });
     }
 
     function toggleSibCard(player, type) {
+      if (isWriteBlocked()) return;
       var prefix = type === 'queen' ? 'sibQ' : 'sibD';
       var el = document.getElementById(prefix + player);
       var state = parseInt(el.dataset.state) || 0;
@@ -711,6 +728,7 @@
       return (sibeetState.playerCount || 4) === 3 ? 12 : 13;
     }
     function stepHearts(player, delta) {
+      if (isWriteBlocked()) return;
       var cur = getHeartsVal(player);
       var nv = cur + delta;
       if (nv < 0) return;
@@ -730,6 +748,7 @@
     }
 
     function toggleKaboutBtn(player) {
+      if (isWriteBlocked()) return;
       var el = document.getElementById('sibK' + player);
       var isActive = el.classList.contains('active');
       // Deactivate all others first (only one player can kabout)
@@ -752,6 +771,7 @@
     }
 
     function toggleMaseera(player) {
+      if (isWriteBlocked()) return;
       var el = document.getElementById('sibM' + player);
       var failBtn = document.getElementById('sibMF' + player);
       var kaboutBtn = document.getElementById('sibK' + player);
@@ -767,6 +787,7 @@
     }
 
     function toggleMaseeraFail(player) {
+      if (isWriteBlocked()) return;
       var el = document.getElementById('sibMF' + player);
       el.classList.toggle('active');
       if (navigator.vibrate) navigator.vibrate(10);
@@ -807,6 +828,7 @@
     }
 
     function setCustomSibeetTarget(val) {
+      if (isWriteBlocked()) return;
       var num = parseInt(val);
       if (!num || num < 10) return;
       sibeetState.target = num; SibeetState.save(sibeetState);
@@ -814,18 +836,21 @@
     }
 
     function setPlayerCount(count) {
+      if (isWriteBlocked()) return;
       sibeetState.playerCount = count;
       SibeetState.save(sibeetState);
       renderSibeet();
     }
 
     function togglePlayer4() {
+      if (isWriteBlocked()) return;
       var current = sibeetState.playerCount || 4;
       setPlayerCount(current === 4 ? 3 : 4);
     }
 
     var sibeetSubmitLocked = false;
     function submitSibeet() {
+      if (isWriteBlocked()) return;
       if (sibeetSubmitLocked) return;
       var pc = sibeetState.playerCount || 4;
       var scores = [], totalHearts = 0;
@@ -902,32 +927,52 @@
     }
 
     async function renameSibeetPlayer(idx) {
+      if (isWriteBlocked()) return;
       var name = await appPrompt('اسم اللاعب:', sibeetState.players[idx]);
       if (name) { sibeetState.players[idx] = name; SibeetState.save(sibeetState); renderSibeet(); }
     }
 
     async function undoSibeetRound() {
+      if (isWriteBlocked()) return;
       if (!sibeetState.rounds.length) return;
       if (!(await appConfirm('تراجع عن آخر جولة؟'))) return;
       SibeetState.undoLastRound(sibeetState); renderSibeet();
     }
 
     async function newSibeetGame() {
+      if (isWriteBlocked()) return;
       if (!(await appConfirm('لعبة جديدة؟ سيتم مسح جميع النتائج'))) return;
       SibeetState.newGame(sibeetState); renderSibeet();
     }
 
-    // ── Room Manager (P2P + Firebase fallback) ──
-    const PEER_PREFIX = 'sib1-';
+    // ── Room Manager (Firebase-only) ────────────────
     const FB_NS = 'sibeet';
-    let peer = null, connections = [], hostConn = null, isHost = false, editUnlocked = false, roomCode = '';
-    let roomMode = 'p2p';
-    let fbUnsubState = null, fbUnsubMsgs = null, fbMyId = null, p2pFallbackAttempted = false;
+    let isHost = false, editUnlocked = false, roomCode = '';
+    // Guests with locked edit may not mutate state. Used as a first-line
+    // guard inside every mutator so keyboard/console/shortcuts can't
+    // bypass the DOM-hiding done in renderSibeet().
+    function isWriteBlocked() {
+      return !!(roomCode && !isHost && !editUnlocked);
+    }
+    let fbUnsubState = null, fbUnsubMsgs = null, fbUnsubPresence = null, fbMyId = null;
 
     function genRoomCode() { return Math.random().toString(36).substring(2, 6).toUpperCase(); }
 
+    function saveRoomSession(role, code) {
+      sessionStorage.setItem('sibeet_room', JSON.stringify({ role, code }));
+    }
+    function clearRoomSession() {
+      sessionStorage.removeItem('sibeet_room');
+    }
+
     function createRoom() {
+      if (!window.FB) {
+        alert('Firebase غير متوفر، تأكد من الإنترنت');
+        return;
+      }
       roomCode = genRoomCode();
+      isHost = true;
+      editUnlocked = false;
       document.getElementById('roomModalTitle').textContent = 'غرفة جديدة';
       document.getElementById('roomCreateView').style.display = '';
       document.getElementById('roomJoinView').style.display = 'none';
@@ -939,40 +984,44 @@
       document.getElementById('connectedCount').textContent = 'جاري الاتصال...';
       pushOverlay('roomModal');
       document.getElementById('roomModal').style.display = 'flex';
-      editUnlocked = false; isHost = true; connections = [];
       showRoomStatus('غرفة ' + roomCode + ' • جاري الاتصال...');
 
-      peer = new Peer(PEER_PREFIX + roomCode.toLowerCase(), { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
-      peer.on('open', () => { document.getElementById('connectedCount').textContent = 'جاهز • ٠ متصلين'; showRoomStatus('غرفة ' + roomCode + ' • معزّب • ٠ متصلين'); });
-      peer.on('connection', conn => {
-        connections.push(conn);
-        updateConnCount();
-        conn.on('data', msg => {
-          if (msg.type === 'round_added' && editUnlocked) {
-            SibeetState.addRound(sibeetState, msg.payload.scores);
-            renderSibeet(); broadcastState();
-          } else if (msg.type === 'name_changed' && editUnlocked) {
-            sibeetState.players[msg.payload.idx] = msg.payload.name;
-            SibeetState.save(sibeetState); renderSibeet(); broadcastState();
-          }
+      const FB = window.FB;
+      const roomRef = FB.ref(FB.db, 'rooms/' + roomCode);
+      FB.set(roomRef, {
+        host: true, createdAt: FB.serverTimestamp(),
+        state: getStatePayload(), editUnlocked: false, presence: {}
+      }).then(() => {
+        FB.onDisconnect(roomRef).remove();
+        saveRoomSession('host', roomCode);
+        document.getElementById('connectedCount').textContent = 'جاهز • ٠ متصلين';
+        showRoomStatus('غرفة ' + roomCode + ' • معزّب • ٠ متصلين');
+        fbUnsubPresence = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/presence'), snap => {
+          const presence = snap.val() || {};
+          const count = Object.keys(presence).length;
+          const arabic = count.toLocaleString('ar-SA');
+          document.getElementById('connectedCount').textContent = arabic + ' متصلين';
+          showRoomStatus('غرفة ' + roomCode + ' • معزّب • ' + arabic + ' متصلين');
         });
-        conn.on('close', () => { connections = connections.filter(c => c !== conn); updateConnCount(); });
-        conn.on('open', () => {
-          conn.send({ type: 'state_sync', payload: getStatePayload() });
-          conn.send({ type: 'edit_lock', payload: { unlocked: editUnlocked } });
+        fbUnsubMsgs = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'), snap => {
+          const msgs = snap.val() || {};
+          Object.keys(msgs).forEach(k => {
+            const msg = msgs[k];
+            if (editUnlocked) {
+              if (msg.type === 'round_added') {
+                SibeetState.addRound(sibeetState, msg.scores);
+                renderSibeet(); broadcastState();
+              } else if (msg.type === 'name_changed') {
+                sibeetState.players[msg.idx] = msg.name;
+                SibeetState.save(sibeetState); renderSibeet(); broadcastState();
+              }
+            }
+            FB.remove(FB.ref(FB.db, 'rooms/' + roomCode + '/messages/' + k));
+          });
         });
-      });
-      peer.on('error', err => {
-        console.error('Peer error:', err);
-        if (!p2pFallbackAttempted && (String(err).indexOf('server') !== -1 || err.type === 'network' || err.type === 'socket-error' || err.type === 'unavailable-id')) {
-          p2pFallbackAttempted = true;
-          document.getElementById('connectedCount').textContent = 'يتم التحويل إلى الغرفة الكبيرة...';
-          if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
-          connections = []; isHost = false;
-          setTimeout(() => { roomMode = 'firebase'; createRoomFirebase(); }, 500);
-          return;
-        }
-        document.getElementById('connectedCount').textContent = 'لم يتم الاتصال، تأكد من الإنترنت';
+      }).catch(err => {
+        console.error(err);
+        document.getElementById('connectedCount').textContent = 'فشل الاتصال بـ Firebase';
       });
     }
 
@@ -987,33 +1036,42 @@
     }
 
     function doJoinRoom() {
-      const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+      let code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
       if (!code) { document.getElementById('joinError').textContent = 'أدخل رمز الغرفة'; return; }
-      if (code.charAt(0) === 'F' && code.charAt(1) === '-') { return doJoinRoomFirebase(code.substring(2)); }
+      // Strip legacy F- prefix if present
+      if (code.charAt(0) === 'F' && code.charAt(1) === '-') code = code.substring(2);
       if (code.length !== 4) { document.getElementById('joinError').textContent = 'أدخل رمز من ٤ أحرف'; return; }
+      if (!window.FB) { document.getElementById('joinError').textContent = 'Firebase غير متوفر'; return; }
       document.getElementById('joinError').textContent = '';
       document.getElementById('joinSpinner').style.display = '';
       isHost = false; roomCode = code;
 
-      peer = new Peer(undefined, { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] } });
-      peer.on('open', () => {
-        hostConn = peer.connect(PEER_PREFIX + code.toLowerCase());
-        hostConn.on('open', () => { document.getElementById('joinSpinner').style.display = 'none'; closeRoomModal(); showRoomStatus('غرفة ' + code + ' • متصل'); });
-        hostConn.on('data', msg => {
-          if (msg.type === 'state_sync') { applyStatePayload(msg.payload); renderSibeet(); }
-          else if (msg.type === 'edit_lock') {
-            editUnlocked = msg.payload.unlocked;
-            renderSibeet();
-          }
-        });
-        hostConn.on('close', () => { showRoomStatus('انقطع الاتصال'); hostConn = null; });
-        setTimeout(() => {
-          if (!hostConn || !hostConn.open) {
-            document.getElementById('joinSpinner').style.display = 'none';
-            document.getElementById('joinError').textContent = 'لم يتم العثور على الغرفة، تأكد من الرمز والإنترنت';
-            if (peer) peer.destroy();
-          }
-        }, 10000);
+      const FB = window.FB;
+      const roomRef = FB.ref(FB.db, 'rooms/' + code);
+      fbUnsubState = FB.onValue(roomRef, snap => {
+        const data = snap.val();
+        if (!data) {
+          document.getElementById('joinSpinner').style.display = 'none';
+          document.getElementById('joinError').textContent = 'الغرفة غير موجودة';
+          return;
+        }
+        if (!fbMyId) {
+          fbMyId = Math.random().toString(36).substring(2, 10);
+          const presRef = FB.ref(FB.db, 'rooms/' + code + '/presence/' + fbMyId);
+          FB.set(presRef, { joinedAt: FB.serverTimestamp() });
+          FB.onDisconnect(presRef).remove();
+          document.getElementById('joinSpinner').style.display = 'none';
+          closeRoomModal();
+          showRoomStatus('غرفة ' + code + ' • متصل');
+          saveRoomSession('joiner', code);
+        }
+        if (data.state) { applyStatePayload(data.state); }
+        editUnlocked = !!data.editUnlocked;
+        renderSibeet();
+      }, err => {
+        console.error(err);
+        document.getElementById('joinSpinner').style.display = 'none';
+        document.getElementById('joinError').textContent = 'فشل الاتصال بـ Firebase';
       });
     }
 
@@ -1039,8 +1097,6 @@
       const qrBox = document.getElementById('qrBox'); qrBox.innerHTML = '';
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
       new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
-      const count = connections.filter(c => c.open).length;
-      document.getElementById('connectedCount').textContent = count.toLocaleString('ar-SA') + ' متصلين';
       pushOverlay('roomModal');
       document.getElementById('roomModal').style.display = 'flex';
     }
@@ -1050,13 +1106,6 @@
       if (navigator.share) {
         navigator.share({ title: 'بنت السبيت - الديوانية', text: 'تعال انضم للغرفة! الرمز: ' + roomCode, url: joinUrl }).catch(() => copyRoomLink());
       } else { copyRoomLink(); }
-    }
-
-    function updateConnCount() {
-      const count = connections.filter(c => c.open).length;
-      const arabic = count.toLocaleString('ar-SA');
-      document.getElementById('connectedCount').textContent = arabic + ' متصلين';
-      showRoomStatus('غرفة ' + roomCode + ' • معزّب • ' + arabic + ' متصلين');
     }
 
     function showRoomStatus(text) {
@@ -1089,112 +1138,27 @@
       if (!isHost) return;
       editUnlocked = !editUnlocked;
       refreshEditLockBtn();
-      connections.forEach(function(c) {
-        if (c.open) c.send({ type: 'edit_lock', payload: { unlocked: editUnlocked } });
-      });
-      if (roomMode === 'firebase' && window.FB && roomCode) {
+      if (window.FB && roomCode) {
         window.FB.set(window.FB.ref(window.FB.db, 'rooms/' + roomCode + '/editUnlocked'), editUnlocked).catch(function() {});
       }
       renderSibeet();
     }
 
     function leaveRoom() {
-      if (peer) { peer.destroy(); peer = null; }
       if (fbUnsubState) { fbUnsubState(); fbUnsubState = null; }
       if (fbUnsubMsgs) { fbUnsubMsgs(); fbUnsubMsgs = null; }
-      if (window.FB && roomCode && roomMode === 'firebase' && isHost) {
-        window.FB.remove(window.FB.ref(window.FB.db, 'rooms/' + roomCode)).catch(() => {});
+      if (fbUnsubPresence) { fbUnsubPresence(); fbUnsubPresence = null; }
+      if (window.FB && roomCode) {
+        if (isHost) {
+          window.FB.remove(window.FB.ref(window.FB.db, 'rooms/' + roomCode)).catch(() => {});
+        } else if (fbMyId) {
+          window.FB.remove(window.FB.ref(window.FB.db, 'rooms/' + roomCode + '/presence/' + fbMyId)).catch(() => {});
+        }
       }
-      connections = []; hostConn = null; isHost = false; roomCode = ''; editUnlocked = false; fbMyId = null; p2pFallbackAttempted = false; roomMode = 'p2p';
+      isHost = false; roomCode = ''; editUnlocked = false; fbMyId = null;
+      clearRoomSession();
       document.getElementById('roomStatus').style.display = 'none';
       renderSibeet();
-    }
-
-    // ── Firebase room implementation ──
-    function createRoomFirebase() {
-      if (!window.FB) { document.getElementById('connectedCount').textContent = 'Firebase غير متوفر'; return; }
-      roomCode = genRoomCode();
-      isHost = true; roomMode = 'firebase';
-      document.getElementById('roomModalTitle').textContent = 'غرفة جديدة';
-      document.getElementById('roomCreateView').style.display = '';
-      document.getElementById('roomJoinView').style.display = 'none';
-      document.getElementById('roomCodeDisplay').textContent = 'F-' + roomCode;
-      const joinUrl = window.location.href.split('?')[0] + '?room=F-' + roomCode;
-      const qrBox = document.getElementById('qrBox'); qrBox.innerHTML = '';
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
-      if (document.getElementById('roomModal').style.display !== 'flex') { pushOverlay('roomModal'); document.getElementById('roomModal').style.display = 'flex'; }
-      editUnlocked = false;
-      showRoomStatus('غرفة F-' + roomCode + ' • جاري الاتصال...');
-
-      const FB = window.FB;
-      const roomRef = FB.ref(FB.db, 'rooms/' + roomCode);
-      FB.set(roomRef, {
-        host: true, createdAt: FB.serverTimestamp(),
-        state: getStatePayload(), editUnlocked: false, presence: {}
-      }).then(() => {
-        FB.onDisconnect(roomRef).remove();
-        fbUnsubState = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/presence'), snap => {
-          const presence = snap.val() || {};
-          const count = Object.keys(presence).length;
-          const arabic = count.toLocaleString('ar-SA');
-          document.getElementById('connectedCount').textContent = arabic + ' متصلين';
-          showRoomStatus('غرفة F-' + roomCode + ' • معزّب • ' + arabic + ' متصلين');
-        });
-        fbUnsubMsgs = FB.onValue(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'), snap => {
-          const msgs = snap.val() || {};
-          Object.keys(msgs).forEach(k => {
-            const msg = msgs[k];
-            if (!editUnlocked) return;
-            if (msg.type === 'round_added') {
-              SibeetState.addRound(sibeetState, msg.scores);
-              renderSibeet(); broadcastState();
-            } else if (msg.type === 'name_changed') {
-              sibeetState.players[msg.idx] = msg.name;
-              SibeetState.save(sibeetState); renderSibeet(); broadcastState();
-            }
-            FB.remove(FB.ref(FB.db, 'rooms/' + roomCode + '/messages/' + k));
-          });
-        });
-        showRoomStatus('غرفة F-' + roomCode + ' • معزّب • ٠ متصلين');
-      }).catch(err => {
-        console.error(err);
-        document.getElementById('connectedCount').textContent = 'فشل الاتصال بـ Firebase';
-      });
-    }
-
-    function doJoinRoomFirebase(code) {
-      if (!window.FB) { document.getElementById('joinError').textContent = 'Firebase غير متوفر'; return; }
-      document.getElementById('joinError').textContent = '';
-      document.getElementById('joinSpinner').style.display = '';
-      isHost = false; roomCode = code; roomMode = 'firebase';
-      const FB = window.FB;
-      const roomRef = FB.ref(FB.db, 'rooms/' + code);
-      FB.onValue(roomRef, snap => {
-        const data = snap.val();
-        if (!data) {
-          document.getElementById('joinSpinner').style.display = 'none';
-          document.getElementById('joinError').textContent = 'الغرفة غير موجودة';
-          return;
-        }
-        if (!fbMyId) {
-          fbMyId = Math.random().toString(36).substring(2, 10);
-          const presRef = FB.ref(FB.db, 'rooms/' + code + '/presence/' + fbMyId);
-          FB.set(presRef, { joinedAt: FB.serverTimestamp() });
-          FB.onDisconnect(presRef).remove();
-          document.getElementById('joinSpinner').style.display = 'none';
-          closeRoomModal();
-          showRoomStatus('غرفة F-' + code + ' • متصل');
-        }
-        if (data.state) { applyStatePayload(data.state); }
-        editUnlocked = !!data.editUnlocked;
-        renderSibeet();
-      }, err => {
-        console.error(err);
-        document.getElementById('joinSpinner').style.display = 'none';
-        document.getElementById('joinError').textContent = 'فشل الاتصال بـ Firebase';
-      });
-      fbUnsubState = () => {};
     }
 
     function getStatePayload() { return { players: sibeetState.players, rounds: sibeetState.rounds, totals: sibeetState.totals, target: sibeetState.target, playerCount: sibeetState.playerCount }; }
@@ -1209,66 +1173,70 @@
     }
 
     function broadcastState() {
-      if (roomMode === 'firebase' && window.FB && roomCode) {
-        const FB = window.FB;
-        if (isHost) {
-          FB.set(FB.ref(FB.db, 'rooms/' + roomCode + '/state'), getStatePayload()).catch(() => {});
-        } else {
-          const rounds = sibeetState.rounds;
-          const lastRound = rounds[rounds.length - 1];
-          if (lastRound) {
-            const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
-            FB.set(msgRef, { type: 'round_added', scores: lastRound.scores }).catch(() => {});
-          }
+      if (!window.FB || !roomCode) return;
+      const FB = window.FB;
+      if (isHost) {
+        FB.set(FB.ref(FB.db, 'rooms/' + roomCode + '/state'), getStatePayload()).catch(() => {});
+      } else {
+        const rounds = sibeetState.rounds;
+        const lastRound = rounds[rounds.length - 1];
+        if (lastRound) {
+          const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
+          FB.set(msgRef, { type: 'round_added', scores: lastRound.scores }).catch(() => {});
         }
-        return;
       }
-      if (!isHost) {
-        if (hostConn && hostConn.open) {
-          const rounds = sibeetState.rounds;
-          const lastRound = rounds[rounds.length - 1];
-          if (lastRound) hostConn.send({ type: 'round_added', payload: { scores: lastRound.scores } });
-        }
-        return;
-      }
-      const payload = { type: 'state_sync', payload: getStatePayload() };
-      connections.forEach(c => { if (c.open) c.send(payload); });
     }
 
-    // Hook broadcastState into submit and game actions
+    // Hook broadcastState into submit and game actions. Each wrapper
+    // re-checks isWriteBlocked() so a locked viewer can't even trigger
+    // the broadcast path (the originals are also guarded — belt and
+    // braces against bypass via keyboard/console).
     const _origSubmit = submitSibeet;
-    submitSibeet = function() { _origSubmit(); broadcastState(); };
+    submitSibeet = function() { if (isWriteBlocked()) return; _origSubmit(); broadcastState(); };
     const _origUndo = undoSibeetRound;
-    undoSibeetRound = async function() { await _origUndo(); broadcastState(); };
+    undoSibeetRound = async function() { if (isWriteBlocked()) return; await _origUndo(); broadcastState(); };
     const _origNew = newSibeetGame;
-    newSibeetGame = async function() { await _origNew(); broadcastState(); };
+    newSibeetGame = async function() { if (isWriteBlocked()) return; await _origNew(); broadcastState(); };
     const _origRename = renameSibeetPlayer;
     renameSibeetPlayer = async function(idx) {
+      if (isWriteBlocked()) return;
       await _origRename(idx);
-      if (!isHost) {
-        if (roomMode === 'firebase' && window.FB && roomCode) {
-          const FB = window.FB;
-          const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
-          FB.set(msgRef, { type: 'name_changed', idx, name: sibeetState.players[idx] }).catch(() => {});
-        } else if (hostConn && hostConn.open) {
-          hostConn.send({ type: 'name_changed', payload: { idx, name: sibeetState.players[idx] } });
-        }
+      if (!isHost && window.FB && roomCode) {
+        const FB = window.FB;
+        const msgRef = FB.push(FB.ref(FB.db, 'rooms/' + roomCode + '/messages'));
+        FB.set(msgRef, { type: 'name_changed', idx, name: sibeetState.players[idx] }).catch(() => {});
       }
       broadcastState();
     };
 
-    // Auto-join room from URL parameter
+    // Auto-join room from URL parameter or reconnect from sessionStorage
     (function() {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
       if (roomParam) {
-        const isFB = roomParam.charAt(0) === 'F' && roomParam.charAt(1) === '-';
-        const validLen = isFB ? (roomParam.length === 6) : (roomParam.length === 4);
-        if (validLen) {
+        let code = roomParam.toUpperCase();
+        if (code.charAt(0) === 'F' && code.charAt(1) === '-') code = code.substring(2);
+        if (code.length === 4) {
           window.history.replaceState({}, '', window.location.pathname);
-          setTimeout(() => { document.getElementById('joinCodeInput').value = roomParam.toUpperCase(); doJoinRoom(); }, 500);
+          setTimeout(() => {
+            document.getElementById('joinCodeInput').value = code;
+            doJoinRoom();
+          }, 500);
+          return;
         }
       }
+      // Reconnect to previous room after refresh (joiner only — host can't reclaim an old code)
+      try {
+        const saved = JSON.parse(sessionStorage.getItem('sibeet_room'));
+        if (saved && saved.code && saved.code.length === 4 && saved.role === 'joiner') {
+          setTimeout(() => {
+            document.getElementById('joinCodeInput').value = saved.code;
+            doJoinRoom();
+          }, 500);
+        } else if (saved) {
+          clearRoomSession();
+        }
+      } catch(e) {}
     })();
 
     // Also handle popstate for room modal

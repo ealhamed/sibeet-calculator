@@ -4,10 +4,9 @@ Standalone 4-player Hearts (بنت السبيت) score tracker PWA — sibling t
 
 ## Stack
 - Single-file PWA (`index.html` ~750 lines)
-- PeerJS v1.5.4 for P2P multiplayer (star topology)
-- Firebase Realtime Database as scaling fallback when PeerJS broker is unavailable
+- Firebase Realtime Database for shared rooms (host broadcasts state, viewers mirror)
 - QRCode.js for room QR codes
-- Service Worker (`sw.js`, cache `sibeet-v6`) for offline caching
+- Service Worker (`sw.js`, cache `sibeet-v15`) for offline caching
 - Al Dewaniah visual identity (burgundy/gold/navy/cream, Cairo font)
 
 ## Commands
@@ -21,7 +20,7 @@ https://ealhamed.github.io/sibeet-calculator/
 ## Files
 | File | What |
 |------|------|
-| `index.html` | Calculator app (UI + game logic + P2P + Firebase) |
+| `index.html` | Calculator app (UI + game logic + Firebase rooms) |
 | `sw.js` | Service worker (cache-first) |
 | `manifest.json` | PWA manifest |
 | `firebase.json` / `database.rules.json` / `.firebaserc` | Firebase RTDB config for `sibeet-calculator-al-dew` |
@@ -44,9 +43,11 @@ https://ealhamed.github.io/sibeet-calculator/
 - Round total preview (+N)
 
 ### Multiplayer (Room System)
-- **PeerJS mode** (default): host generates 4-digit code, viewers scan QR or enter code; ~8 viewer soft cap
-- **Firebase mode** (auto-fallback): on PeerJS broker error, app silently switches to Firebase RTDB with `F-XXXX` code prefix, removing viewer cap
-- **Viewers are read-only** — host's device is the single source of truth. Edit-access toggle was removed; the fallback makes per-session opt-in unnecessary
+- **Firebase-only**: host generates a 4-char code, viewers scan QR or enter the code. No viewer cap beyond Firebase quota.
+- State model: `rooms/{code}` holds `state`, `editUnlocked`, `presence/{id}`, and `messages/{id}` (viewer→host round pushes when edit unlocked)
+- Host writes full state on every broadcast; viewers mirror via `onValue`. `onDisconnect` removes room on host exit and presence entry on viewer exit.
+- **Viewers are read-only** by default — host can toggle edit-unlock to let viewers push rounds
+- Legacy `F-XXXX` links are still accepted on join (prefix stripped) for URL compatibility
 - Firebase project: `sibeet-calculator-al-dew` (isolated 100-concurrent quota)
 
 ### Features

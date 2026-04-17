@@ -1,4 +1,4 @@
-const CACHE = 'sibeet-v20';
+const CACHE = 'sibeet-v2.0';
 const ASSETS = [
   './',
   './index.html',

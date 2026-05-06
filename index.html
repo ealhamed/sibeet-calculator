@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="#722F37">
+  <meta name="apple-mobile-web-app-status-bar-style" content="#1C1C1E">
   <title>بنت السبيت - الديوانية</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -14,13 +14,13 @@
   <style>@font-face { font-family: 'Cairo'; font-display: swap; }</style>
   <style>
     :root {
-      --bg: #F5F0E6;
-      --burgundy: #722F37;
-      --gold: #C9A227;
-      --navy: #1A2744;
-      --text: #1D1E20;
-      --cream: #F5F0E6;
-      --gold-text: #8B7318;
+      --bg: #F5F5F7;
+      --burgundy: #1C1C1E;
+      --gold: #FFB800;
+      --navy: #1C1C1E;
+      --text: #1C1C1E;
+      --cream: #F5F5F7;
+      --gold-text: #A87000;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -155,7 +155,7 @@
     }
     .sib-toggle .card-suit { font-size: 22px; line-height: 1; }
     .sib-toggle .card-val { font-size: 12px; font-weight: 700; line-height: 1; opacity: 0.7; }
-    .sib-toggle.spade .card-suit { color: #1A2744; }
+    .sib-toggle.spade .card-suit { color: #1C1C1E; }
     .sib-toggle.diamond .card-suit { color: #C41E3A; }
     .sib-toggle.diamond .card-val { color: #C41E3A; }
     .sib-toggle.active {
@@ -242,9 +242,9 @@
 
     /* ── Dark Mode ── */
     [data-theme="dark"] {
-      --bg: #1A1A2E; --burgundy: #A84450; --gold: #D4AF37; --gold-text: #D4AF37;
-      --navy: #E8E4DC; --text: #E8E4DC; --cream: #E8E4DC;
-      --input-bg: #2A2A4A; --input-border: rgba(232,228,220,0.15);
+      --bg: #000000; --burgundy: #1C1C1E; --gold: #FFB800; --gold-text: #FFB800;
+      --navy: #F5F5F7; --text: #F5F5F7; --cream: #F5F5F7;
+      --input-bg: #2C2C2E; --input-border: rgba(245,245,247,0.10);
     }
     [data-theme="dark"] .sibeet-player { background: rgba(232,228,220,0.06); }
     [data-theme="dark"] .sibeet-player.danger { background: rgba(168,68,80,0.1); }
@@ -936,7 +936,7 @@
       var pc = s.playerCount || 4;
       var ranked = s.players.slice(0, pc).map(function(n,i) { return {name:n, score:s.totals[i]}; }).sort(function(a,b) { return a.score-b.score; });
       var svgMedal = function(color, num) { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="14" r="8" fill="' + color + '" opacity="0.9"/><text x="12" y="18" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Cairo">' + num + '</text><path d="M8 2L12 8L16 2" stroke="' + color + '" stroke-width="2" fill="none" opacity="0.5"/></svg>'; };
-      var medals = [svgMedal('#C9A227','١'), svgMedal('#A0A0A0','٢'), svgMedal('#CD7F32','٣'), ''];
+      var medals = [svgMedal('#FFB800','١'), svgMedal('#A0A0A0','٢'), svgMedal('#CD7F32','٣'), ''];
       var barColors = ['var(--gold)','rgba(192,192,192,0.7)','rgba(205,127,50,0.7)','rgba(245,240,230,0.2)'];
       var overlay = document.createElement('div');
       overlay.className = 'game-over-overlay';
@@ -1008,7 +1008,7 @@
       const joinUrl = window.location.href.split('?')[0] + '?room=' + roomCode;
       const qrBox = document.getElementById('qrBox'); qrBox.innerHTML = '';
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
+      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#F5F5F7' : '#1C1C1E', colorLight: isDark ? '#000000' : '#F5F5F7', correctLevel: QRCode.CorrectLevel.M });
       document.getElementById('connectedCount').textContent = 'جاري الاتصال...';
       pushOverlay('roomModal');
       document.getElementById('roomModal').style.display = 'flex';
@@ -1124,7 +1124,7 @@
       const joinUrl = getJoinUrl();
       const qrBox = document.getElementById('qrBox'); qrBox.innerHTML = '';
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#E8E4DC' : '#1A2744', colorLight: isDark ? '#1A1A2E' : '#F5F0E6', correctLevel: QRCode.CorrectLevel.M });
+      new QRCode(qrBox, { text: joinUrl, width: 160, height: 160, colorDark: isDark ? '#F5F5F7' : '#1C1C1E', colorLight: isDark ? '#000000' : '#F5F5F7', correctLevel: QRCode.CorrectLevel.M });
       pushOverlay('roomModal');
       document.getElementById('roomModal').style.display = 'flex';
     }
